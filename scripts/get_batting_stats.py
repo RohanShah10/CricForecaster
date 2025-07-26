@@ -1,11 +1,6 @@
-from pathlib import Path
-import json
 from dataclasses import dataclass
 from typing import Dict, Union
-
-# Adjust the folder path to where your match JSON files are stored
-SCRIPT_DIR = Path(__file__).parent
-FOLDER_PATH = SCRIPT_DIR.parent / "ipl_data" / "matches"
+from cricket_utils import is_wide, process_matches_for_player
 
 
 @dataclass
@@ -17,11 +12,6 @@ class BattingStats:
     dot_balls: int = 0
     boundary_balls: int = 0
     out: bool = False
-
-
-def is_wide(delivery: dict) -> bool:
-    """Return True if the delivery is a wide ball."""
-    return "wides" in delivery.get("extras", {})
 
 
 def process_delivery(delivery: dict, player: str) -> BattingStats:
@@ -73,61 +63,30 @@ def process_innings(overs: list, player: str) -> BattingStats:
     return stats
 
 
-def get_match_files_sorted_by_date(folder_path):
-    """Return a list of match file paths sorted by the match date in info['dates'][0]."""
-    file_date_pairs = []
-    for json_file in folder_path.glob("*.json"):
-        try:
-            with open(json_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                match_date = data.get("info", {}).get("dates", [None])[0]
-                if match_date:
-                    file_date_pairs.append((json_file, match_date))
-        except (json.JSONDecodeError, KeyError, IndexError):
-            continue
-    file_date_pairs.sort(key=lambda x: x[1])
-    return [pair[0] for pair in file_date_pairs]
-
-
 def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
-    """
-    Gather comprehensive batting stats for a player across all matches.
-    Returns a dict with extended metrics.
-    """
-    matches_played = set()
-    innings_played = set()
+    """Gather comprehensive batting stats for a player across all matches."""
+    matches_played, innings_played, all_stats = process_matches_for_player(player, process_innings)
+    
     highest_score = 0
     outs = 0
     runs = balls_faced = fours = sixes = dot_balls = boundary_balls = 0
     innings_out_flags = {}
     innings_scores = []
 
-    # Use the helper to get sorted match files
-    sorted_json_files = get_match_files_sorted_by_date(FOLDER_PATH)
-
-    for json_file in sorted_json_files:
-        match_id = json_file.stem
-        with open(json_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            for inning_idx, inning in enumerate(data.get("innings", [])):
-                overs = inning.get("overs", [])
-                stats = process_innings(overs, player)
-                if stats.balls_faced > 0:
-                    matches_played.add(match_id)
-                    innings_played.add((match_id, inning_idx))
-                    highest_score = max(highest_score, stats.runs)
-                    runs += stats.runs
-                    balls_faced += stats.balls_faced
-                    fours += stats.fours
-                    sixes += stats.sixes
-                    dot_balls += stats.dot_balls
-                    boundary_balls += stats.boundary_balls
-                    innings_scores.append(stats.runs)
-                    if stats.out:
-                        outs += 1
-                        innings_out_flags[(match_id, inning_idx)] = True
-                    else:
-                        innings_out_flags[(match_id, inning_idx)] = False
+    for match_id, inning_idx, stats in all_stats:
+        highest_score = max(highest_score, stats.runs)
+        runs += stats.runs
+        balls_faced += stats.balls_faced
+        fours += stats.fours
+        sixes += stats.sixes
+        dot_balls += stats.dot_balls
+        boundary_balls += stats.boundary_balls
+        innings_scores.append(stats.runs)
+        if stats.out:
+            outs += 1
+            innings_out_flags[(match_id, inning_idx)] = True
+        else:
+            innings_out_flags[(match_id, inning_idx)] = False
 
     not_outs = sum(1 for out_flag in innings_out_flags.values() if not out_flag)
     innings_count = len(innings_played)
@@ -170,4 +129,13 @@ def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
         "recent_scores": recent_scores,
         "form_index": form_index
     }
+
+
+if __name__ == "__main__":
+    # Example usage
+    player_name = "MS Dhoni"
+    stats = get_batting_stats(player_name)
+    print(f"Batting stats for {player_name}:")
+    for key, value in stats.items():
+        print(f"{key}: {value}")
 
