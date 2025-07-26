@@ -44,5 +44,6 @@ with ThreadPoolExecutor(max_workers=10) as executor:
 
 with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
     json.dump(batting_stats, f, indent=2)
+    
 
 print(f"Successfully processed {len(batting_stats)} players")

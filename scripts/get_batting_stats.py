@@ -1,9 +1,9 @@
 from pathlib import Path
 import json
-import random
 from dataclasses import dataclass
 from typing import Dict, Union
 
+# Adjust the folder path to where your match JSON files are stored
 SCRIPT_DIR = Path(__file__).parent
 FOLDER_PATH = SCRIPT_DIR.parent / "ipl_data" / "matches"
 
@@ -28,9 +28,11 @@ def process_delivery(delivery: dict, player: str) -> BattingStats:
     """Process a single delivery for the player and return stats for that delivery."""
     if delivery.get("batter") != player:
         return BattingStats()
+
     run = delivery.get("runs", {}).get("batter", 0)
     balls_faced = 0
     fours = sixes = dot_balls = boundary_balls = 0
+
     if not is_wide(delivery):
         balls_faced = 1
         if run == 4:
@@ -41,6 +43,7 @@ def process_delivery(delivery: dict, player: str) -> BattingStats:
             boundary_balls = 1
         elif run == 0:
             dot_balls = 1
+
     out = any(wicket.get("player_out") == player for wicket in delivery.get("wickets", []))
     return BattingStats(
         balls_faced=balls_faced,
@@ -89,7 +92,7 @@ def get_match_files_sorted_by_date(folder_path):
 def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
     """
     Gather comprehensive batting stats for a player across all matches.
-    Returns a dict with keys: matches, innings, not_outs, runs, average, strike_rate, balls_faced, fours, sixes, highest_score, dot_ball_percentage, boundary_percentage, recent_scores.
+    Returns a dict with extended metrics.
     """
     matches_played = set()
     innings_played = set()
@@ -97,11 +100,11 @@ def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
     outs = 0
     runs = balls_faced = fours = sixes = dot_balls = boundary_balls = 0
     innings_out_flags = {}
-    innings_scores = []  # Track each innings score for recent form
+    innings_scores = []
 
     # Use the helper to get sorted match files
     sorted_json_files = get_match_files_sorted_by_date(FOLDER_PATH)
-    
+
     for json_file in sorted_json_files:
         match_id = json_file.stem
         with open(json_file, "r", encoding="utf-8") as f:
@@ -119,7 +122,7 @@ def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
                     sixes += stats.sixes
                     dot_balls += stats.dot_balls
                     boundary_balls += stats.boundary_balls
-                    innings_scores.append(stats.runs)  # Add this innings score
+                    innings_scores.append(stats.runs)
                     if stats.out:
                         outs += 1
                         innings_out_flags[(match_id, inning_idx)] = True
@@ -134,7 +137,16 @@ def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
     dot_ball_percentage = (dot_balls / balls_faced) * 100 if balls_faced > 0 else 0.0
     boundary_percentage = (boundary_balls / balls_faced) * 100 if balls_faced > 0 else 0.0
 
+    # Advanced metrics
+    balls_per_boundary = balls_faced / (fours + sixes) if (fours + sixes) > 0 else 0.0
+    boundary_to_dot_ratio = (fours + sixes) / dot_balls if dot_balls > 0 else 0.0
+    balls_per_dismissal = balls_faced / (innings_count - not_outs) if (innings_count - not_outs) > 0 else 0.0
+    fifties = sum(1 for score in innings_scores if 50 <= score < 100)
+    hundreds = sum(1 for score in innings_scores if score >= 100)
+    consistency = (sum(1 for score in innings_scores if score >= 30) / innings_count * 100) if innings_count > 0 else 0.0
+
     recent_scores = innings_scores[-5:] if innings_scores else []
+    form_index = round(sum(s * w for s, w in zip(recent_scores[::-1], [1.5, 1.3, 1.1, 0.9, 0.7])) / 5, 2) if recent_scores else 0.0
 
     return {
         "matches": matches_count,
@@ -149,5 +161,13 @@ def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
         "highest_score": highest_score,
         "dot_ball_percentage": round(dot_ball_percentage, 2),
         "boundary_percentage": round(boundary_percentage, 2),
-        "recent_scores": recent_scores
+        "balls_per_boundary": round(balls_per_boundary, 2),
+        "boundary_to_dot_ratio": round(boundary_to_dot_ratio, 2),
+        "balls_per_dismissal": round(balls_per_dismissal, 2),
+        "fifties": fifties,
+        "hundreds": hundreds,
+        "consistency": round(consistency, 2),
+        "recent_scores": recent_scores,
+        "form_index": form_index
     }
+
