@@ -1,0 +1,129 @@
+from pathlib import Path
+import json
+import random
+from dataclasses import dataclass
+from typing import Dict, Union
+
+SCRIPT_DIR = Path(__file__).parent
+FOLDER_PATH = SCRIPT_DIR.parent / "ipl_data" / "matches"
+
+
+@dataclass
+class BattingStats:
+    balls_faced: int = 0
+    runs: int = 0
+    fours: int = 0
+    sixes: int = 0
+    dot_balls: int = 0
+    boundary_balls: int = 0
+    out: bool = False
+
+
+def is_wide(delivery: dict) -> bool:
+    """Return True if the delivery is a wide ball."""
+    return "wides" in delivery.get("extras", {})
+
+
+def process_delivery(delivery: dict, player: str) -> BattingStats:
+    """Process a single delivery for the player and return stats for that delivery."""
+    if delivery.get("batter") != player:
+        return BattingStats()
+    run = delivery.get("runs", {}).get("batter", 0)
+    balls_faced = 0
+    fours = sixes = dot_balls = boundary_balls = 0
+    if not is_wide(delivery):
+        balls_faced = 1
+        if run == 4:
+            fours = 1
+            boundary_balls = 1
+        elif run == 6:
+            sixes = 1
+            boundary_balls = 1
+        elif run == 0:
+            dot_balls = 1
+    out = any(wicket.get("player_out") == player for wicket in delivery.get("wickets", []))
+    return BattingStats(
+        balls_faced=balls_faced,
+        runs=run,
+        fours=fours,
+        sixes=sixes,
+        dot_balls=dot_balls,
+        boundary_balls=boundary_balls,
+        out=out
+    )
+
+
+def process_innings(overs: list, player: str) -> BattingStats:
+    """Process all deliveries in an innings for the player and return aggregated stats."""
+    stats = BattingStats()
+    for over in overs:
+        for delivery in over.get("deliveries", []):
+            d_stats = process_delivery(delivery, player)
+            stats.runs += d_stats.runs
+            stats.balls_faced += d_stats.balls_faced
+            stats.fours += d_stats.fours
+            stats.sixes += d_stats.sixes
+            stats.dot_balls += d_stats.dot_balls
+            stats.boundary_balls += d_stats.boundary_balls
+            if d_stats.out:
+                stats.out = True
+    return stats
+
+
+def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
+    """
+    Gather comprehensive batting stats for a player across all matches.
+    Returns a dict with keys: matches, innings, not_outs, runs, average, strike_rate, balls_faced, fours, sixes, highest_score, dot_ball_percentage, boundary_percentage.
+    """
+    matches_played = set()
+    innings_played = set()
+    highest_score = 0
+    outs = 0
+    runs = balls_faced = fours = sixes = dot_balls = boundary_balls = 0
+    innings_out_flags = {}
+
+    for json_file in FOLDER_PATH.glob("*.json"):
+        match_id = json_file.stem
+        with open(json_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            for inning_idx, inning in enumerate(data.get("innings", [])):
+                overs = inning.get("overs", [])
+                stats = process_innings(overs, player)
+                if stats.balls_faced > 0:
+                    matches_played.add(match_id)
+                    innings_played.add((match_id, inning_idx))
+                    highest_score = max(highest_score, stats.runs)
+                    runs += stats.runs
+                    balls_faced += stats.balls_faced
+                    fours += stats.fours
+                    sixes += stats.sixes
+                    dot_balls += stats.dot_balls
+                    boundary_balls += stats.boundary_balls
+                    if stats.out:
+                        outs += 1
+                        innings_out_flags[(match_id, inning_idx)] = True
+                    else:
+                        innings_out_flags[(match_id, inning_idx)] = False
+
+    not_outs = sum(1 for out_flag in innings_out_flags.values() if not out_flag)
+    innings_count = len(innings_played)
+    matches_count = len(matches_played)
+    average = runs / (innings_count - not_outs) if (innings_count - not_outs) > 0 else float('inf') if runs > 0 else 0.0
+    strike_rate = (runs / balls_faced) * 100 if balls_faced > 0 else 0.0
+    dot_ball_percentage = (dot_balls / balls_faced) * 100 if balls_faced > 0 else 0.0
+    boundary_percentage = (boundary_balls / balls_faced) * 100 if balls_faced > 0 else 0.0
+
+    return {
+        "matches": matches_count,
+        "innings": innings_count,
+        "not_outs": not_outs,
+        "runs": runs,
+        "average": round(average, 2) if average != float('inf') else average,
+        "strike_rate": round(strike_rate, 2),
+        "balls_faced": balls_faced,
+        "fours": fours,
+        "sixes": sixes,
+        "highest_score": highest_score,
+        "dot_ball_percentage": round(dot_ball_percentage, 2),
+        "boundary_percentage": round(boundary_percentage, 2)
+    }
