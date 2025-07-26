@@ -70,10 +70,26 @@ def process_innings(overs: list, player: str) -> BattingStats:
     return stats
 
 
+def get_match_files_sorted_by_date(folder_path):
+    """Return a list of match file paths sorted by the match date in info['dates'][0]."""
+    file_date_pairs = []
+    for json_file in folder_path.glob("*.json"):
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                match_date = data.get("info", {}).get("dates", [None])[0]
+                if match_date:
+                    file_date_pairs.append((json_file, match_date))
+        except (json.JSONDecodeError, KeyError, IndexError):
+            continue
+    file_date_pairs.sort(key=lambda x: x[1])
+    return [pair[0] for pair in file_date_pairs]
+
+
 def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
     """
     Gather comprehensive batting stats for a player across all matches.
-    Returns a dict with keys: matches, innings, not_outs, runs, average, strike_rate, balls_faced, fours, sixes, highest_score, dot_ball_percentage, boundary_percentage.
+    Returns a dict with keys: matches, innings, not_outs, runs, average, strike_rate, balls_faced, fours, sixes, highest_score, dot_ball_percentage, boundary_percentage, recent_scores.
     """
     matches_played = set()
     innings_played = set()
@@ -81,8 +97,12 @@ def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
     outs = 0
     runs = balls_faced = fours = sixes = dot_balls = boundary_balls = 0
     innings_out_flags = {}
+    innings_scores = []  # Track each innings score for recent form
 
-    for json_file in FOLDER_PATH.glob("*.json"):
+    # Use the helper to get sorted match files
+    sorted_json_files = get_match_files_sorted_by_date(FOLDER_PATH)
+    
+    for json_file in sorted_json_files:
         match_id = json_file.stem
         with open(json_file, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -99,6 +119,7 @@ def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
                     sixes += stats.sixes
                     dot_balls += stats.dot_balls
                     boundary_balls += stats.boundary_balls
+                    innings_scores.append(stats.runs)  # Add this innings score
                     if stats.out:
                         outs += 1
                         innings_out_flags[(match_id, inning_idx)] = True
@@ -113,6 +134,8 @@ def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
     dot_ball_percentage = (dot_balls / balls_faced) * 100 if balls_faced > 0 else 0.0
     boundary_percentage = (boundary_balls / balls_faced) * 100 if balls_faced > 0 else 0.0
 
+    recent_scores = innings_scores[-5:] if innings_scores else []
+
     return {
         "matches": matches_count,
         "innings": innings_count,
@@ -125,5 +148,6 @@ def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
         "sixes": sixes,
         "highest_score": highest_score,
         "dot_ball_percentage": round(dot_ball_percentage, 2),
-        "boundary_percentage": round(boundary_percentage, 2)
+        "boundary_percentage": round(boundary_percentage, 2),
+        "recent_scores": recent_scores
     }
