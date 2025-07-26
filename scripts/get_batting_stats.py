@@ -132,7 +132,7 @@ def get_batting_stats(player: str) -> Dict[str, Union[int, float]]:
     not_outs = sum(1 for out_flag in innings_out_flags.values() if not out_flag)
     innings_count = len(innings_played)
     matches_count = len(matches_played)
-    average = runs / (innings_count - not_outs) if (innings_count - not_outs) > 0 else float('inf') if runs > 0 else 0.0
+    average = runs / (innings_count - not_outs) if (innings_count - not_outs) > 0 else runs if runs > 0 else 0.0
     strike_rate = (runs / balls_faced) * 100 if balls_faced > 0 else 0.0
     dot_ball_percentage = (dot_balls / balls_faced) * 100 if balls_faced > 0 else 0.0
     boundary_percentage = (boundary_balls / balls_faced) * 100 if balls_faced > 0 else 0.0
